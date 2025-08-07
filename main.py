@@ -16,8 +16,10 @@ import uvicorn
 from config.settings import settings
 from src.database.init_db import initialize_all_databases, cleanup_connections, health_check
 
-# Import WebSocket router
+# Import WebSocket router and agent integration
 from src.websocket import websocket_router
+from src.websocket.agent_integration import websocket_agent_bridge
+from src.websocket.connection_manager import connection_manager
 
 # Import auth components
 from src.auth import create_access_token, User
@@ -48,12 +50,17 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to initialize databases - exiting")
         raise RuntimeError("Database initialization failed")
     
+    # Initialize WebSocket-Agent bridge
+    websocket_agent_bridge.connection_manager = connection_manager
+    await websocket_agent_bridge.initialize()
+    
     logger.info("Application startup completed successfully")
     
     yield
     
     # Shutdown
     logger.info("Shutting down FinOps Agent Chat application...")
+    await websocket_agent_bridge.cleanup()
     await cleanup_connections()
     logger.info("Application shutdown completed")
 

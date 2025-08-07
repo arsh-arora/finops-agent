@@ -175,8 +175,8 @@ class Phase4AgentRegistry:
         agent_class = await self.router.select(domain, user_ctx)
         
         # Get agent domain for caching
-        if hasattr(agent_class, 'get_domain'):
-            agent_domain = agent_class.get_domain() if callable(agent_class.get_domain) else agent_class._domain
+        if hasattr(agent_class, '_domain'):
+            agent_domain = agent_class._domain
         else:
             agent_domain = domain or "unknown"
         

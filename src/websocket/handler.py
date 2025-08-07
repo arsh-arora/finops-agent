@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db_session, ConversationEvent
 from ..database.models import ConversationEventType, AgentType
 from .connection_manager import connection_manager
+from .agent_integration import websocket_agent_bridge
 
 logger = logging.getLogger(__name__)
 
@@ -121,56 +122,42 @@ class WebSocketHandler:
         db_session: AsyncSession
     ):
         """
-        Process a user message and determine agent routing.
+        Process a user message through the complete agent pipeline.
         
         Args:
             conversation_event: The conversation event record
             connection_id: WebSocket connection ID
             db_session: Database session
         """
-        # For now, send a simple response
-        # In Phase 2, this will route to the appropriate agent
-        
-        response_message = {
-            "type": "agent_thinking",
-            "conversation_id": conversation_event.conversation_id,
-            "message": "Processing your request...",
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
-        await connection_manager.send_personal_message(connection_id, response_message)
-        
-        # TODO: Route to agent planner and graph compiler
-        # This will be implemented in Phase 2 with the agent framework
-        
-        # Create a mock response event for now
-        response_event = ConversationEvent(
-            conversation_id=conversation_event.conversation_id,
-            user_id=conversation_event.user_id,
-            agent_type=AgentType.FINOPS,  # Default to FinOps for now
-            event_type=ConversationEventType.AGENT_RESPONSE,
-            message_text="I understand you need help with FinOps. Let me analyze your request...",
-            event_metadata={
-                "original_event_id": conversation_event.event_id,
-                "response_type": "initial_acknowledgment"
+        try:
+            # Extract original message data
+            message_data = {
+                'text': conversation_event.message_text,
+                'type': 'user_message',
+                'metadata': conversation_event.event_metadata or {},
+                'timestamp': conversation_event.created_at.isoformat(),
+                'message_id': conversation_event.event_id
             }
-        )
-        
-        db_session.add(response_event)
-        await db_session.commit()
-        await db_session.refresh(response_event)
-        
-        # Send response to client
-        response = {
-            "type": "agent_response",
-            "event_id": response_event.event_id,
-            "conversation_id": response_event.conversation_id,
-            "agent_type": response_event.agent_type.value,
-            "message": response_event.message_text,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
-        await connection_manager.send_personal_message(connection_id, response)
+            
+            # Route through agent integration bridge
+            await websocket_agent_bridge.process_user_message(
+                connection_id=connection_id,
+                message=message_data,
+                db_session=db_session
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in process_user_message: {e}")
+            
+            # Fallback to simple response if agent system fails
+            fallback_response = {
+                "type": "error",
+                "message": f"Agent system temporarily unavailable: {str(e)}",
+                "conversation_id": conversation_event.conversation_id,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            await connection_manager.send_personal_message(connection_id, fallback_response)
     
     async def send_error_message(self, connection_id: str, error_message: str):
         """

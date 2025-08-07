@@ -1,0 +1,16 @@
+invoice_id,date,vendor,category,amount,currency,account_id,cost_center,description
+INV-2024-001,2024-01-15,AWS,Cloud Services,1250.75,USD,123456789012,Engineering,EC2 instances and S3 storage
+INV-2024-002,2024-01-15,Azure,Cloud Services,890.25,USD,789012345678,DevOps,Virtual machines and databases
+INV-2024-003,2024-01-20,GitHub,Software,99.00,USD,123456789012,Engineering,GitHub Enterprise subscription
+INV-2024-004,2024-01-25,DataDog,Monitoring,450.00,USD,123456789012,Operations,APM and Infrastructure monitoring
+INV-2024-005,2024-02-01,AWS,Cloud Services,1580.30,USD,123456789012,Engineering,Increased compute usage
+INV-2024-006,2024-02-05,Snowflake,Data Platform,2200.00,USD,456789012345,Analytics,Data warehouse usage
+INV-2024-007,2024-02-10,Kubernetes,Orchestration,350.00,USD,123456789012,DevOps,Managed Kubernetes service
+INV-2024-008,2024-02-15,New Relic,Monitoring,380.50,USD,789012345678,Operations,Application performance monitoring
+INV-2024-009,2024-02-20,AWS,Cloud Services,1750.90,USD,123456789012,Engineering,RDS and Lambda services
+INV-2024-010,2024-02-25,Terraform,Infrastructure,200.00,USD,123456789012,DevOps,Infrastructure as Code platform
+INV-2024-011,2024-03-01,GCP,Cloud Services,950.40,USD,345678901234,Engineering,Google Cloud Platform services
+INV-2024-012,2024-03-05,Slack,Communication,150.00,USD,123456789012,Operations,Team communication platform
+INV-2024-013,2024-03-10,AWS,Cloud Services,2100.25,USD,123456789012,Engineering,Peak month usage - Q1 close
+INV-2024-014,2024-03-15,Grafana,Visualization,300.00,USD,789012345678,Operations,Monitoring dashboards
+INV-2024-015,2024-03-20,CircleCI,CI/CD,280.75,USD,123456789012,DevOps,Continuous integration pipeline
