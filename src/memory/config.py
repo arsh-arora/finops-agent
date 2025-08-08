@@ -24,7 +24,7 @@ def get_mem0_config() -> Dict[str, Any]:
     """
     try:
         # Set OpenRouter API key for LLM
-        os.environ["OPENROUTER_API_KEY"] = "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"
+        os.environ["OPENROUTER_API_KEY"] = "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"
         
         config = {
             # Vector store configuration (Qdrant)
@@ -52,7 +52,7 @@ def get_mem0_config() -> Dict[str, Any]:
             "llm": {
                 "provider": "openai",
                 "config": {
-                    "model": "openrouter/horizon-beta",
+                    "model": "openai/gpt-oss-20b:free",
                     "api_key": os.environ["OPENROUTER_API_KEY"],
                     "openai_base_url": "https://openrouter.ai/api/v1",
                     "temperature": 0.2,

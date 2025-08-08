@@ -33,9 +33,13 @@ pydantic==2.7.3
 pydantic-settings==2.1.0
 PyYAML==6.0.1
 
+# LLM Clients
+openai==1.54.3
+
 # Utilities
 python-dotenv==1.0.0
 httpx==0.25.2
+aiohttp==3.9.5
 structlog==24.4.0
 
 # Graph execution

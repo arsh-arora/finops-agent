@@ -56,10 +56,10 @@ class WebSocketAgentBridge:
             
             # Initialize agent components
             self.agent_registry = get_agent_registry()
-            await self.agent_registry.initialize()
+            # Agent registry initializes in constructor, no async initialize needed
             
             self.planner = AgentPlanner(memory_service=finops_memory_service)
-            self.compiler = DynamicGraphCompiler()
+            self.compiler = DynamicGraphCompiler(memory_service=finops_memory_service)
             self.runner = LangGraphRunner(memory_service=finops_memory_service)
             
             logger.info("WebSocket-Agent bridge initialized successfully")
@@ -81,8 +81,7 @@ class WebSocketAgentBridge:
             # Cleanup components
             if self.runner:
                 await self.runner.cleanup()
-            if self.agent_registry:
-                await self.agent_registry.cleanup()
+            # Agent registry doesn't need async cleanup
                 
             logger.info("WebSocket-Agent bridge cleanup completed")
             
@@ -123,12 +122,8 @@ class WebSocketAgentBridge:
             chat_request = ChatRequest(
                 message=message.get('text', ''),
                 user_id=user_id,
-                conversation_id=conversation_id,
-                metadata={
-                    'connection_id': connection_id,
-                    'execution_id': execution_id,
-                    **message.get('metadata', {})
-                }
+                context_id=conversation_id,  # Use context_id instead of conversation_id
+                source="websocket"
             )
             
             # Start async execution
@@ -190,9 +185,9 @@ class WebSocketAgentBridge:
             
             user_context = {
                 'user_id': chat_request.user_id,
-                'conversation_id': chat_request.conversation_id,
+                'conversation_id': chat_request.context_id,  # Use context_id
                 'message': chat_request.message,
-                'metadata': chat_request.metadata
+                'metadata': {}
             }
             
             agent = await self.agent_registry.get_agent(
@@ -204,7 +199,7 @@ class WebSocketAgentBridge:
                 'event': 'agent_selected',
                 'execution_id': execution_id,
                 'agent_domain': agent.get_domain(),
-                'agent_capabilities': list(agent.get_capabilities().keys())
+                'agent_capabilities': agent.get_capabilities()
             })
             
             # Step 2: Plan Creation
@@ -254,7 +249,7 @@ class WebSocketAgentBridge:
             execution_context = {
                 'request_id': execution_plan.request_id,
                 'user_id': chat_request.user_id,
-                'conversation_id': chat_request.conversation_id,
+                'conversation_id': chat_request.context_id,  # Use context_id
                 'execution_id': execution_id,
                 'connection_id': connection_id
             }

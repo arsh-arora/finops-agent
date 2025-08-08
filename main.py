@@ -21,6 +21,12 @@ from src.websocket import websocket_router
 from src.websocket.agent_integration import websocket_agent_bridge
 from src.websocket.connection_manager import connection_manager
 
+# Import agent system components
+from src.agents import initialize_agent_registry
+from src.memory.mem0_service import FinOpsMemoryService
+from src.memory.config import get_mem0_config
+from src.llm.openrouter_client import OpenRouterClient
+
 # Import auth components
 from src.auth import create_access_token, User
 from datetime import timedelta
@@ -49,6 +55,24 @@ async def lifespan(app: FastAPI):
     if not success:
         logger.error("Failed to initialize databases - exiting")
         raise RuntimeError("Database initialization failed")
+    
+    # Initialize memory service
+    logger.info("Initializing memory service...")
+    memory_config = get_mem0_config()
+    memory_service = FinOpsMemoryService(config=memory_config)
+    await memory_service.initialize()
+    
+    # Initialize OpenRouter LLM client
+    logger.info("Initializing OpenRouter LLM client...")
+    llm_client = OpenRouterClient()
+    
+    # Initialize agent registry with memory service and OpenRouter
+    logger.info("Initializing agent registry...")
+    initialize_agent_registry(
+        memory_service=memory_service,
+        llm_client=llm_client,
+        config={}
+    )
     
     # Initialize WebSocket-Agent bridge
     websocket_agent_bridge.connection_manager = connection_manager
