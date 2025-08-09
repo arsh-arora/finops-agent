@@ -78,7 +78,8 @@ async def test_websocket_connection():
                 
                 while response_count < 1000:  # Limit responses per message
                     try:
-                        response = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+                        print(f"   🕐 Waiting for response (attempt {response_count + 1})...")
+                        response = await asyncio.wait_for(websocket.recv(), timeout=3000.0)  # Increased timeout
                         data = json.loads(response)
                         
                         event_type = data.get("event", "message")

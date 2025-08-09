@@ -7,11 +7,10 @@ import time
 import networkx as nx
 import structlog
 from typing import Dict, Any, List, Callable, Optional, Set, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
-    from langgraph import StateGraph
-    from langgraph.graph import START, END
+    from langgraph.graph import StateGraph, START, END
     LANGGRAPH_AVAILABLE = True
 except ImportError:
     # Fallback for development/testing
@@ -165,6 +164,7 @@ class DynamicGraphCompiler:
             
             return CompilationResult(
                 success=True,
+                graph=compiled_graph,
                 graph_json=self._serialize_graph(compiled_graph),
                 compilation_time_ms=compilation_time,
                 nodes_created=nodes_created,
@@ -262,8 +262,10 @@ class DynamicGraphCompiler:
                 state["memory_context"] = memory_context
                 state["request_id"] = plan.request_id
                 state["user_id"] = plan.user_id
+                if "execution_log" not in state:
+                    state["execution_log"] = []
                 state["execution_log"].append({
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "action": "memory_retrieval",
                     "memories_retrieved": len(memory_context)
                 })
@@ -285,6 +287,8 @@ class DynamicGraphCompiler:
                 
                 # Continue with empty context on failure
                 state["memory_context"] = []
+                if "error_context" not in state:
+                    state["error_context"] = {}
                 state["error_context"]["memory_retrieval_error"] = str(e)
                 return state
         
@@ -321,8 +325,10 @@ class DynamicGraphCompiler:
                 )
                 
                 # Update execution log
+                if "execution_log" not in state:
+                    state["execution_log"] = []
                 state["execution_log"].append({
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "action": "memory_persistence", 
                     "results_persisted": len(task_results)
                 })
@@ -342,6 +348,8 @@ class DynamicGraphCompiler:
                     error=str(e)
                 )
                 
+                if "error_context" not in state:
+                    state["error_context"] = {}
                 state["error_context"]["memory_persistence_error"] = str(e)
                 return state
         
@@ -362,7 +370,7 @@ class DynamicGraphCompiler:
                 
                 # Mark task as in progress
                 task.status = TaskStatus.IN_PROGRESS
-                task.started_at = datetime.utcnow()
+                task.started_at = datetime.now(timezone.utc)
                 
                 # Get agent tools
                 agent_tools = agent.get_tools()
@@ -376,7 +384,7 @@ class DynamicGraphCompiler:
                 
                 # Mark task as completed
                 task.status = TaskStatus.COMPLETED
-                task.completed_at = datetime.utcnow()
+                task.completed_at = datetime.now(timezone.utc)
                 
                 # Store result in state
                 state["task_results"][str(task.id)] = {
@@ -387,8 +395,10 @@ class DynamicGraphCompiler:
                 }
                 
                 # Update execution log
+                if "execution_log" not in state:
+                    state["execution_log"] = []
                 state["execution_log"].append({
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "action": "task_execution",
                     "task_id": str(task.id),
                     "tool_name": task.tool_name,
@@ -414,12 +424,16 @@ class DynamicGraphCompiler:
                 
                 # Mark task as failed
                 task.status = TaskStatus.FAILED
-                task.completed_at = datetime.utcnow()
+                task.completed_at = datetime.now(timezone.utc)
                 
                 # Store error in state
+                if "error_context" not in state:
+                    state["error_context"] = {}
                 state["error_context"][str(task.id)] = str(e)
+                if "execution_log" not in state:
+                    state["execution_log"] = []
                 state["execution_log"].append({
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "action": "task_execution",
                     "task_id": str(task.id),
                     "tool_name": task.tool_name,
@@ -527,7 +541,7 @@ class DynamicGraphCompiler:
                 "type": "StateGraph",
                 "nodes": list(getattr(compiled_graph, 'nodes', {}).keys()),
                 "edges": getattr(compiled_graph, 'edges', []),
-                "serialized_at": datetime.utcnow().isoformat(),
+                "serialized_at": datetime.now(timezone.utc).isoformat(),
                 "langgraph_available": LANGGRAPH_AVAILABLE
             }
         except Exception as e:

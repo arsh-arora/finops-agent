@@ -308,10 +308,12 @@ class CompilationResult(BaseModel):
     """Result of graph compilation process"""  
     model_config = ConfigDict(
         json_encoders={datetime: lambda v: v.isoformat()},
-        validate_assignment=True
+        validate_assignment=True,
+        arbitrary_types_allowed=True
     )
     
     success: bool = Field(..., description="Whether compilation succeeded")
+    graph: Optional[Any] = Field(default=None, description="Compiled StateGraph object")
     graph_json: Optional[Dict[str, Any]] = Field(default=None, description="Serialized StateGraph")
     error_message: str = Field(default="", description="Error message if compilation failed")
     warnings: List[str] = Field(default_factory=list, description="Compilation warnings")

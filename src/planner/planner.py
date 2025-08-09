@@ -5,13 +5,14 @@ Translates natural-language instructions into ExecutionPlan objects
 
 import json
 import time
+import traceback
 import structlog
 from typing import Dict, Any, List, Optional
 from uuid import uuid4
 
-from memory import FinOpsMemoryService
-from agents.models import ChatRequest, ExecutionPlan, Task, Dependency, CostEstimate, PlanningResult
-from agents.base.agent import HardenedAgent
+from ..memory.mem0_service import FinOpsMemoryService
+from ..agents.models import ChatRequest, ExecutionPlan, Task, Dependency, CostEstimate, PlanningResult
+from ..agents.base.agent import HardenedAgent
 from .models import CostModel, PlanningConfig
 from .exceptions import PlanningError, BudgetExceededError, InvalidRequestError, ToolNotFoundError
 
@@ -214,19 +215,50 @@ class AgentPlanner:
         )
         
         try:
+            logger.info(
+                "starting_llm_planning",
+                request_id=request.request_id,
+                model=self.config.planning_model,
+                prompt_length=len(planning_prompt),
+                available_tools=list(agent_tools.get('tools_definitions', {}).keys())
+            )
+            
+            # Log the planning prompt for debugging
+            logger.debug(
+                "planning_prompt_content",
+                request_id=request.request_id,
+                prompt=planning_prompt[:1000] + "..." if len(planning_prompt) > 1000 else planning_prompt
+            )
+            
             # Call LLM for plan generation
+            logger.info("calling_llm_for_planning", request_id=request.request_id)
             response = await self.llm_client.complete(
                 messages=[{"role": "user", "content": planning_prompt}],
                 model=self.config.planning_model,
                 max_tokens=self.config.max_planning_tokens,
                 temperature=self.config.planning_temperature
             )
+            logger.info("llm_call_completed", request_id=request.request_id)
+            
+            logger.info(
+                "llm_response_received",
+                request_id=request.request_id,
+                response_length=len(response) if response else 0,
+                response_preview=response[:200] + "..." if response and len(response) > 200 else response
+            )
             
             # Parse LLM response into ExecutionPlan
             plan = self._parse_planning_response(response, request)
             
+            logger.info(
+                "planning_successful", 
+                request_id=request.request_id,
+                plan_tasks_count=len(plan.tasks),
+                selected_tools=[task.tool_name for task in plan.tasks]
+            )
+            
             # Store planning tokens used
-            plan._planning_tokens = len(response.split())
+            plan._planning_tokens = len(response.split()) if response else 0
             
             return plan
             
@@ -234,10 +266,18 @@ class AgentPlanner:
             logger.error(
                 "llm_plan_generation_failed",
                 request_id=request.request_id,
-                error=str(e)
+                error=str(e),
+                error_type=type(e).__name__,
+                traceback=traceback.format_exc()
             )
             
             # Fallback to simple plan
+            logger.info(
+                "falling_back_to_simple_plan",
+                request_id=request.request_id,
+                available_tools=list(agent_tools.get('tools_definitions', {}).keys())
+            )
+            
             return await self._fallback_generate_plan(
                 request,
                 agent_capabilities,

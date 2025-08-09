@@ -1,0 +1,42 @@
+[project]
+name = "finops-agent-chat"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "aiohttp>=3.12.15",
+    "arch>=7.2.0",
+    "asyncpg>=0.30.0",
+    "bandit>=1.8.6",
+    "celery>=5.5.3",
+    "cvxpy>=1.7.1",
+    "docling>=2.43.0",
+    "fastapi>=0.116.1",
+    "fredapi>=0.5.2",
+    "gitpython>=3.1.45",
+    "greenlet>=3.2.4",
+    "langgraph>=0.6.4",
+    "mem0ai[graph]>=0.1.115",
+    "neo4j>=5.28.2",
+    "networkx>=3.4.2",
+    "pandas>=2.3.1",
+    "passlib>=1.7.4",
+    "pydantic-settings>=2.10.1",
+    "pydriller>=2.8",
+    "pymupdf>=1.26.3",
+    "pytesseract>=0.3.13",
+    "python-jose>=3.5.0",
+    "qdrant-client>=1.15.1",
+    "redis>=6.4.0",
+    "scikit-learn>=1.7.1",
+    "semgrep>=1.131.0",
+    "sentence-transformers>=5.1.0",
+    "spacy>=3.8.7",
+    "sqlalchemy>=2.0.42",
+    "statsmodels>=0.14.5",
+    "structlog>=25.4.0",
+    "tavily-python>=0.7.10",
+    "uvicorn>=0.35.0",
+    "yfinance>=0.2.65",
+]

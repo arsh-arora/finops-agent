@@ -69,6 +69,8 @@ async def initialize_all_databases():
         
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 

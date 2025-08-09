@@ -58,7 +58,12 @@ class WebSocketAgentBridge:
             self.agent_registry = get_agent_registry()
             # Agent registry initializes in constructor, no async initialize needed
             
-            self.planner = AgentPlanner(memory_service=finops_memory_service)
+            # Get LLM client from agent registry
+            from ..llm.openrouter_client import openrouter_client
+            self.planner = AgentPlanner(
+                memory_service=finops_memory_service,
+                llm_client=openrouter_client
+            )
             self.compiler = DynamicGraphCompiler(memory_service=finops_memory_service)
             self.runner = LangGraphRunner(memory_service=finops_memory_service)
             
@@ -208,17 +213,22 @@ class WebSocketAgentBridge:
                 'execution_id': execution_id
             })
             
-            execution_plan = await self.planner.create_plan(
+            planning_result = await self.planner.create_plan(
                 request=chat_request,
                 agent=agent
             )
             
+            if not planning_result.success or not planning_result.plan:
+                raise RuntimeError(f"Planning failed: {planning_result.error_message}")
+            
+            execution_plan = planning_result.plan
+            
             await self.send_execution_event(connection_id, {
                 'event': 'plan_created',
                 'execution_id': execution_id,
-                'plan_id': execution_plan.id,
+                'plan_id': str(execution_plan.id),
                 'task_count': len(execution_plan.tasks),
-                'estimated_cost': execution_plan.estimated_cost.model_dump() if execution_plan.estimated_cost else None
+                'estimated_cost': execution_plan.cost.model_dump() if execution_plan.cost else None
             })
             
             # Step 3: Graph Compilation
@@ -227,7 +237,7 @@ class WebSocketAgentBridge:
                 'execution_id': execution_id
             })
             
-            compilation_result = await self.compiler.compile(execution_plan)
+            compilation_result = await self.compiler.compile(execution_plan, agent)
             
             if not compilation_result.success:
                 raise RuntimeError(f"Graph compilation failed: {compilation_result.error_message}")
@@ -235,8 +245,8 @@ class WebSocketAgentBridge:
             await self.send_execution_event(connection_id, {
                 'event': 'graph_compiled',
                 'execution_id': execution_id,
-                'node_count': len(compilation_result.graph.nodes),
-                'edge_count': len(compilation_result.graph.edges)
+                'node_count': compilation_result.nodes_created,
+                'edge_count': compilation_result.edges_created
             })
             
             # Step 4: Graph Execution with Streaming

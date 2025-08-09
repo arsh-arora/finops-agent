@@ -22,7 +22,7 @@ class OpenRouterClient:
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         if not self.api_key:
             # Use the hardcoded key from memory config as fallback
-            self.api_key = "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"
+            self.api_key = "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"
         
         self.model = model
         self.base_url = "https://openrouter.ai/api/v1"

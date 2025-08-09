@@ -24,7 +24,7 @@ def get_mem0_config() -> Dict[str, Any]:
     """
     try:
         # Set OpenRouter API key for LLM
-        os.environ["OPENROUTER_API_KEY"] = "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"
+        os.environ["OPENROUTER_API_KEY"] = "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"
         
         config = {
             # Vector store configuration (Qdrant)

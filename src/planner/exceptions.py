@@ -2,7 +2,7 @@
 Planning system exceptions
 """
 
-from agents.base.exceptions import AgentError
+from ..agents.base.exceptions import AgentError
 
 
 class PlanningError(AgentError):

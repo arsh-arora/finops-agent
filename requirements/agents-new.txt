@@ -1,0 +1,15 @@
+# Agents/tooling WITH neo4j-graphrag (use a separate env)
+# Replace camelot with modern pypdf for graphrag
+# Do NOT install camelot-py in this environment.
+
+# core research/ML stack (same as above where applicable)
+docling>=2.0.0
+pdfplumber>=0.9.0
+pymupdf>=1.23.0
+python-docx>=0.8.11
+rapidfuzz>=3.5.0
+pypdf>=5.1,<6.0
+unstructured[all-docs]>=0.11.0
+openai==1.54.3
+httpx==0.27.2
+neo4j-graphrag==1.9.0

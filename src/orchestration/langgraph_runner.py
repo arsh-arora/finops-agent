@@ -7,14 +7,13 @@ import asyncio
 import time
 import structlog
 from typing import Dict, Any, List, Optional, Set
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from dataclasses import dataclass, field
 from contextlib import asynccontextmanager
 
 try:
-    from langgraph import StateGraph
-    from langgraph.graph import START, END
+    from langgraph.graph import StateGraph, START, END
     LANGGRAPH_AVAILABLE = True
 except ImportError:
     LANGGRAPH_AVAILABLE = False
@@ -37,7 +36,7 @@ logger = structlog.get_logger(__name__)
 @dataclass
 class ExecutionMetrics:
     """Comprehensive execution metrics and performance data"""
-    start_time: datetime = field(default_factory=datetime.utcnow)
+    start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     end_time: Optional[datetime] = None
     total_execution_time_ms: float = 0.0
     
@@ -144,7 +143,7 @@ class LangGraphRunner:
 
     async def run_stategraph(
         self,
-        graph: StateGraph,
+        graph,  # CompiledStateGraph from compiler
         context: Dict[str, Any],
         timeout_seconds: int = 300,
         execution_id: Optional[str] = None
@@ -179,16 +178,17 @@ class LangGraphRunner:
             initial_state = GraphState(context)
             
             # Register tools from all agents involved
-            await self._register_graph_tools(graph, initial_state)
+            await self._register_graph_tools(initial_state)
             
             # Execute with timeout and cancellation support
             async with self._execution_context(execution_id, timeout_seconds):
-                final_state = await self._execute_with_monitoring(
-                    graph, initial_state, metrics, execution_id
+                final_state = await asyncio.wait_for(
+                    self._execute_with_monitoring(graph, initial_state, metrics, execution_id),
+                    timeout=timeout_seconds
                 )
             
             # Calculate final metrics
-            metrics.end_time = datetime.utcnow()
+            metrics.end_time = datetime.now(timezone.utc)
             metrics.total_execution_time_ms = (
                 metrics.end_time - metrics.start_time
             ).total_seconds() * 1000
@@ -217,7 +217,7 @@ class LangGraphRunner:
             metrics.errors.append({
                 "type": "timeout",
                 "message": f"Execution exceeded {timeout_seconds}s timeout",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
             
             logger.error(
@@ -235,7 +235,7 @@ class LangGraphRunner:
             metrics.errors.append({
                 "type": type(e).__name__,
                 "message": str(e),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
             
             logger.error(
@@ -251,7 +251,7 @@ class LangGraphRunner:
 
     async def _execute_with_monitoring(
         self,
-        graph: StateGraph,
+        graph,  # Can be StateGraph or CompiledStateGraph
         initial_state: GraphState,
         metrics: ExecutionMetrics,
         execution_id: str
@@ -261,62 +261,44 @@ class LangGraphRunner:
         # Track memory context size
         metrics.memory_context_size = len(initial_state.get('memory_context', []))
         
-        # Create execution wrapper for node monitoring
-        wrapped_graph = self._wrap_graph_for_monitoring(graph, metrics, execution_id)
+        # Use the graph as-is (it's already compiled by the compiler)
         
-        # Execute the wrapped graph
-        if hasattr(wrapped_graph, 'ainvoke'):
-            # LangGraph 0.2+ async execution
-            final_state = await wrapped_graph.ainvoke(initial_state)
-        elif hasattr(wrapped_graph, 'invoke'):
-            # Fallback to sync execution (run in executor)
-            final_state = await asyncio.get_event_loop().run_in_executor(
-                None, wrapped_graph.invoke, initial_state
-            )
-        else:
-            # Manual graph execution for development/testing
-            final_state = await self._manual_graph_execution(
-                wrapped_graph, initial_state, metrics
-            )
+        # Execute with streaming events for monitoring
+        final_state = None
+        node_start_times = {}
         
-        return final_state
-
-    def _wrap_graph_for_monitoring(
-        self, 
-        graph: StateGraph, 
-        metrics: ExecutionMetrics,
-        execution_id: str
-    ) -> StateGraph:
-        """Wrap graph nodes with monitoring and metrics collection"""
+        logger.info(
+            "graph_execution_with_monitoring_started",
+            execution_id=execution_id,
+            initial_state_keys=list(initial_state.keys())
+        )
         
-        # For production LangGraph, we would use middleware/interceptors
-        # For now, we'll track at the execution level
-        
-        if hasattr(graph, 'nodes'):
-            # Track node information
-            for node_name, node_func in graph.nodes.items():
-                # Wrap node functions with monitoring
-                original_func = node_func
+        try:
+            # Use astream_events for detailed monitoring in LangGraph 0.6+
+            async for event in graph.astream_events(initial_state, version="v1"):
+                event_type = event.get("event")
+                event_data = event.get("data", {})
+                event_name = event.get("name", "")
                 
-                async def monitored_node(state: GraphState, 
-                                       node_name=node_name, 
-                                       original=original_func) -> GraphState:
-                    node_start = time.time()
+                if event_type == "on_chain_start" and "node" in event_name:
+                    # Node execution started
+                    node_name = event_name
+                    node_start_times[node_name] = time.time()
                     
                     logger.debug(
                         "node_execution_started",
                         execution_id=execution_id,
                         node_name=node_name,
-                        state_keys=list(state.keys())
+                        event_data=str(event_data)[:200]
                     )
                     
-                    try:
-                        result_state = await original(state)
-                        execution_time = (time.time() - node_start) * 1000
-                        
-                        metrics.nodes_executed += 1
+                elif event_type == "on_chain_end" and "node" in event_name:
+                    # Node execution completed
+                    node_name = event_name
+                    if node_name in node_start_times:
+                        execution_time = (time.time() - node_start_times[node_name]) * 1000
                         metrics.node_execution_times[node_name] = execution_time
-                        metrics.graph_hops += 1
+                        metrics.nodes_executed += 1
                         
                         logger.debug(
                             "node_execution_completed",
@@ -324,31 +306,58 @@ class LangGraphRunner:
                             node_name=node_name,
                             execution_time_ms=execution_time
                         )
-                        
-                        return result_state
-                        
-                    except Exception as e:
-                        metrics.nodes_failed += 1
-                        metrics.errors.append({
-                            "node": node_name,
-                            "error": str(e),
-                            "timestamp": datetime.utcnow().isoformat()
-                        })
-                        
-                        logger.error(
-                            "node_execution_failed",
-                            execution_id=execution_id,
-                            node_name=node_name,
-                            error=str(e)
-                        )
-                        
-                        # Continue execution with error in state
-                        state["error_context"][f"{node_name}_error"] = str(e)
-                        return state
+                    
+                    # Capture final state from the last node
+                    final_state = event_data.get("output", final_state)
+                    
+                elif event_type == "on_chain_error":
+                    # Node execution failed
+                    node_name = event_name
+                    error_msg = str(event_data.get("error", "Unknown error"))
+                    
+                    metrics.nodes_failed += 1
+                    metrics.errors.append({
+                        "node": node_name,
+                        "error": error_msg,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    })
+                    
+                    logger.error(
+                        "node_execution_failed",
+                        execution_id=execution_id,
+                        node_name=node_name,
+                        error=error_msg
+                    )
                 
-                graph.nodes[node_name] = monitored_node
+                metrics.graph_hops += 1
+            
+            # If no final state was captured from events, use direct invocation
+            if final_state is None:
+                logger.warning(
+                    "no_final_state_from_events_fallback_to_invoke",
+                    execution_id=execution_id
+                )
+                final_state = await graph.ainvoke(initial_state)
+            
+        except Exception as e:
+            logger.error(
+                "graph_execution_monitoring_failed_fallback",
+                execution_id=execution_id,
+                error=str(e)
+            )
+            # Fallback to simple execution
+            final_state = await graph.ainvoke(initial_state)
         
-        return graph
+        logger.info(
+            "graph_execution_with_monitoring_completed",
+            execution_id=execution_id,
+            nodes_executed=metrics.nodes_executed,
+            nodes_failed=metrics.nodes_failed,
+            graph_hops=metrics.graph_hops
+        )
+        
+        return final_state
+
 
     async def _manual_graph_execution(
         self,
@@ -379,13 +388,15 @@ class LangGraphRunner:
             except Exception as e:
                 metrics.nodes_failed += 1
                 logger.error(f"Node {node_name} failed: {e}")
+                # Ensure error_context exists
+                if "error_context" not in current_state:
+                    current_state["error_context"] = {}
                 current_state["error_context"][f"{node_name}_error"] = str(e)
         
         return current_state
 
     async def _register_graph_tools(
         self, 
-        graph: StateGraph, 
         state: GraphState
     ) -> None:
         """Register all agent tools referenced in the graph"""
@@ -393,13 +404,28 @@ class LangGraphRunner:
         # Extract agent information from state
         agent_id = state.get('agent_id')
         if not agent_id:
+            logger.debug("no_agent_id_in_state_skipping_tool_registration")
             return
         
         # Cache tool registry for performance
         if agent_id not in self._tool_registry_cache:
-            # This would typically load tools from the agent registry
-            # For now, we'll use a placeholder
-            self._tool_registry_cache[agent_id] = {}
+            # Load tools from the agent registry if available
+            try:
+                # Import here to avoid circular imports
+                from src.agents.base.registry import ToolRegistry
+                
+                # Get agent tools from registry
+                tool_registry = ToolRegistry()
+                agent_tools = await tool_registry.get_agent_tools(agent_id)
+                self._tool_registry_cache[agent_id] = agent_tools
+                
+            except Exception as e:
+                logger.warning(
+                    "failed_to_load_agent_tools_using_empty_cache",
+                    agent_id=agent_id,
+                    error=str(e)
+                )
+                self._tool_registry_cache[agent_id] = {}
         
         logger.debug(
             "graph_tools_registered",
@@ -408,8 +434,11 @@ class LangGraphRunner:
         )
 
     @asynccontextmanager
-    async def _execution_context(self, execution_id: str, timeout_seconds: int):
-        """Manage execution context with timeout and cleanup"""
+    async def _execution_context(self, execution_id: str, _timeout_seconds: int):
+        """Manage execution context with timeout and cleanup
+        
+        Note: timeout_seconds is handled by asyncio.wait_for at the caller level
+        """
         
         # Create execution lock
         lock = asyncio.Lock()
@@ -421,9 +450,7 @@ class LangGraphRunner:
                 current_task = asyncio.current_task()
                 self._active_executions[execution_id] = current_task
                 
-                # Apply timeout
-                async with asyncio.timeout(timeout_seconds):
-                    yield
+                yield
                     
         finally:
             # Cleanup
@@ -439,7 +466,7 @@ class LangGraphRunner:
     ) -> ExecutionResult:
         """Create ExecutionResult for failed executions"""
         
-        metrics.end_time = datetime.utcnow()
+        metrics.end_time = datetime.now(timezone.utc)
         metrics.total_execution_time_ms = (
             metrics.end_time - metrics.start_time
         ).total_seconds() * 1000
@@ -487,14 +514,14 @@ class LangGraphRunner:
         return {
             "execution_id": execution_id,
             "status": "running",
-            "start_time": datetime.utcnow().isoformat()
+            "start_time": datetime.now(timezone.utc).isoformat()
         }
 
     async def cleanup(self) -> None:
         """Cleanup resources and cancel active executions"""
         
         # Cancel all active executions
-        for execution_id, task in list(self._active_executions.items()):
+        for _execution_id, task in list(self._active_executions.items()):
             task.cancel()
             
         # Clear caches
